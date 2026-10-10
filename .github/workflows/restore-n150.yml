@@ -1,0 +1,18 @@
+name: Restore n150 codex2api
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: n150-gateway
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: [self-hosted, Linux, X64, n150-codex2api]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate and restore existing deployment
+        run: |
+          python3 -m py_compile ops/restore_n150.py
+          python3 ops/restore_n150.py
