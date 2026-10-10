@@ -30,12 +30,16 @@ def api(path, post=False):
     return result['data']
 
 assert old.is_dir() and (volume / 'codex2api.db').is_file()
-assert not target.exists(), 'Existing target requires inspection; refusing overwrite'
+if target.exists():
+    assert (target / 'docker-compose.yml').read_bytes() == (old / 'docker-compose.yml').read_bytes(), 'Existing target differs'
+    state = subprocess.check_output(['docker', 'ps', '-q', '--filter', 'name=^codex2api-sqlite$'], text=True)
+    assert not state.strip(), 'codex2api already running'
 run('docker', 'image', 'inspect', 'codex2api:gpt6-price-sync-20261005')
 exports = {gid: api(f'/api/groups/{gid}/credentials/download-all', True)['files'] for gid in (1, 2)}
 assert all(len(files) == 1 for files in exports.values())
 models = api('/api/groups/1/models')['items']
-shutil.copytree(old, target)
+if not target.exists():
+    shutil.copytree(old, target)
 stopped = False
 started = False
 try:
@@ -68,7 +72,7 @@ try:
         assert not filters.get('models') and not filters.get('protocols'), 'Restricted key needs explicit translation'
         groups = filters.get('groups', [])
         limits = {'upstream_channel': 'antigravity' if groups == [1] else 'codex' if groups == [2] else 'auto'}
-        assert groups in ([1], [2], [1, 2]), 'Unknown key scope'
+        assert groups in ([], [1], [2], [1, 2]), 'Unknown key scope'
         assert not row['expires_at_ms'], 'Expiring key needs explicit translation'
         db.execute('insert into api_keys(name,key,quota_limit,quota_used,total_used,reset_count,allowed_group_ids,enabled,created_at,limits) values(?,?,0,0,0,0,?,?,CURRENT_TIMESTAMP,?)',
             (row['name'], row['key_value'], '[]', int(row['status'] == 'active'), json.dumps(limits)))
