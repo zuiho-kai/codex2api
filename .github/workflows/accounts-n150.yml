@@ -1,0 +1,22 @@
+name: Show n150 codex2api account status
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  accounts:
+    runs-on: [self-hosted, Linux, X64, n150-codex2api]
+    timeout-minutes: 5
+    steps:
+      - name: Account status (no credentials)
+        run: |
+          python3 - <<'PY'
+          import sqlite3, json
+          db = sqlite3.connect('file:/var/lib/docker/volumes/codex2api-sqlite_sqlite-data/_data/codex2api.db?mode=ro', uri=True)
+          cols = [r[1] for r in db.execute('pragma table_info(accounts)')]
+          print('columns:', cols)
+          keep = [c for c in cols if c not in ('credentials',) and 'token' not in c and 'secret' not in c and 'cookie' not in c]
+          for row in db.execute('select %s from accounts' % ','.join(keep)):
+              print(json.dumps(dict(zip(keep, row)), ensure_ascii=False, default=str)[:900])
+          PY
+          docker logs --since 15m codex2api-sqlite 2>&1 | grep -iE 'account|codex|refresh|error|warn' | grep -v 'GET /health' | sed -E 's/[A-Za-z0-9_\.\/+=-]{32,}/<redacted>/g' | tail -40
