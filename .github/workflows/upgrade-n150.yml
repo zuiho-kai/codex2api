@@ -1,0 +1,36 @@
+name: Upgrade n150 codex2api to upstream image
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: image to run
+        default: ghcr.io/james-6-23/codex2api:3.0.8
+permissions:
+  contents: read
+concurrency:
+  group: n150-gateway
+  cancel-in-progress: false
+jobs:
+  upgrade:
+    runs-on: [self-hosted, Linux, X64, n150-codex2api]
+    timeout-minutes: 15
+    steps:
+      - name: Pull and swap container
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          cd /opt/codex2api
+          docker pull "$IMAGE"
+          echo "previous image: $(docker inspect codex2api-sqlite --format '{{.Config.Image}}')"
+          ts=$(date -u +%Y%m%dT%H%M%SZ)
+          cp /var/lib/docker/volumes/codex2api-sqlite_sqlite-data/_data/codex2api.db /root/codex2api.db.before-upgrade-$ts
+          if grep -q '^CODEX_IMAGE=' .env; then sed -i "s#^CODEX_IMAGE=.*#CODEX_IMAGE=$IMAGE#" .env; else echo "CODEX_IMAGE=$IMAGE" >> .env; fi
+          docker compose -f docker-compose.yml --env-file .env up -d
+          for i in $(seq 1 45); do
+            if curl -fsS -m 3 http://100.106.164.88:8080/health; then echo; break; fi
+            sleep 2
+          done
+          curl -fsS -m 3 http://100.106.164.88:8080/health
+          docker ps --filter name=codex2api-sqlite --format '{{.Image}} {{.Status}}'
+          docker logs --tail 30 codex2api-sqlite 2>&1 | sed 's/[A-Za-z0-9_-]\{32,\}/<redacted>/g'
