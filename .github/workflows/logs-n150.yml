@@ -1,0 +1,19 @@
+name: Show n150 codex2api logs
+on:
+  workflow_dispatch:
+    inputs:
+      lines:
+        default: "200"
+permissions:
+  contents: read
+jobs:
+  logs:
+    runs-on: [self-hosted, Linux, X64, n150-codex2api]
+    timeout-minutes: 5
+    steps:
+      - name: Container status and logs (secrets redacted)
+        env:
+          LINES: ${{ inputs.lines }}
+        run: |
+          docker ps --filter name=codex2api-sqlite --format '{{.Image}} {{.Status}}'
+          docker logs --tail "$LINES" codex2api-sqlite 2>&1 | sed -E 's/[A-Za-z0-9_\.\/+=-]{32,}/<redacted>/g'
