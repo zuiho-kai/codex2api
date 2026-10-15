@@ -1,0 +1,33 @@
+name: Diag n150 codex2api (read-only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: [self-hosted, Linux, X64, n150-codex2api]
+    timeout-minutes: 5
+    steps:
+      - name: Read-only DB diagnostics (secrets redacted)
+        run: |
+          python3 - <<'PY' | sed -E 's/[A-Za-z0-9_\.\/+=-]{40,}/<redacted>/g'
+          import sqlite3, json
+          db = sqlite3.connect('file:/var/lib/docker/volumes/codex2api-sqlite_sqlite-data/_data/codex2api.db?mode=ro', uri=True)
+          tables = [r[0] for r in db.execute("select name from sqlite_master where type='table'")]
+          print('tables:', tables)
+          def dump(sql, n=40):
+              try:
+                  cur = db.execute(sql); cols = [d[0] for d in cur.description]
+                  for row in cur.fetchmany(n):
+                      print(json.dumps(dict(zip(cols, row)), ensure_ascii=False, default=str)[:700])
+              except Exception as e:
+                  print('ERR', sql[:80], e)
+          print('== account_model_cooldowns'); dump('select * from account_model_cooldowns')
+          print('== account_events (latest)'); dump('select * from account_events order by id desc', 30)
+          for t in tables:
+              if 'usage' in t and 'log' in t:
+                  cols = [r[1] for r in db.execute('pragma table_info(%s)' % t)]
+                  print('==', t, cols)
+                  keep = [c for c in cols if c not in ('request_body','response_body','prompt','headers')]
+                  dump('select %s from %s order by rowid desc' % (','.join(keep), t), 25)
+          PY
