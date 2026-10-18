@@ -74,6 +74,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 1  # 用户 2026-10-18 原话「留1天最多了」
           name: state-interface
           path: |
             .dev/state-ui/

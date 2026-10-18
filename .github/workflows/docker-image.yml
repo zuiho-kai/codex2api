@@ -205,12 +205,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: github.ref == 'refs/heads/main'
         with:
+          retention-days: 1  # 用户 2026-10-18 原话「留1天最多了」
           name: codex2api-basispoints-linux-amd64
           path: |
             codex2api-basispoints-linux-amd64.tar.gz
             SHA256SUMS
           compression-level: 0
-          retention-days: 14
 
       - name: Deployment summary
         env:
