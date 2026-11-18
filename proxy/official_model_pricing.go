@@ -211,41 +211,35 @@ func ParseOpenAIOfficialPricingMarkdown(body []byte) (map[string]database.ModelP
 	standard := parseOfficialPricingTable(body, "### Standard pricing data")
 	fast := parseOfficialPricingTable(body, "### Fast pricing data")
 	images := parseGPTImage25Pricing(body)
-	if len(standard) == 0 && len(images) == 0 {
+	if len(standard.rows) == 0 && len(images) == 0 {
 		return nil, fmt.Errorf("未找到 Standard pricing data 表")
 	}
 	out := images
-	for model, cells := range standard {
-		if len(cells) < 9 {
-			continue
-		}
+	for model, cells := range standard.rows {
 		override := database.ModelPricingOverride{
-			Input:           parseOfficialPrice(cells[1]),
-			CachedInput:     parseOfficialPrice(cells[2]),
-			Output:          parseOfficialPrice(cells[4]),
-			InputLong:       parseOfficialPrice(cells[5]),
-			CachedInputLong: parseOfficialPrice(cells[6]),
-			OutputLong:      parseOfficialPrice(cells[8]),
+			Input:           standard.price(cells, "short context input"),
+			CachedInput:     standard.price(cells, "short context cached input"),
+			Output:          standard.price(cells, "short context output"),
+			InputLong:       standard.price(cells, "long context input"),
+			CachedInputLong: standard.price(cells, "long context cached input"),
+			OutputLong:      standard.price(cells, "long context output"),
 		}
 		if override.InputLong > 0 || override.OutputLong > 0 {
 			override.LongContextThresholdTokens = 272000
 		}
 		out[model] = override
 	}
-	for model, cells := range fast {
-		if len(cells) < 9 {
-			continue
-		}
+	for model, cells := range fast.rows {
 		override, ok := out[model]
 		if !ok {
 			override = database.ModelPricingOverride{}
 		}
-		override.InputPriority = parseOfficialPrice(cells[1])
-		override.CachedInputPriority = parseOfficialPrice(cells[2])
-		override.OutputPriority = parseOfficialPrice(cells[4])
-		override.InputLongPriority = parseOfficialPrice(cells[5])
-		override.CachedInputLongPriority = parseOfficialPrice(cells[6])
-		override.OutputLongPriority = parseOfficialPrice(cells[8])
+		override.InputPriority = fast.price(cells, "short context input")
+		override.CachedInputPriority = fast.price(cells, "short context cached input")
+		override.OutputPriority = fast.price(cells, "short context output")
+		override.InputLongPriority = fast.price(cells, "long context input")
+		override.CachedInputLongPriority = fast.price(cells, "long context cached input")
+		override.OutputLongPriority = fast.price(cells, "long context output")
 		out[model] = override
 	}
 	for model, override := range out {
@@ -256,8 +250,25 @@ func ParseOpenAIOfficialPricingMarkdown(body []byte) (map[string]database.ModelP
 	return out, nil
 }
 
-func parseOfficialPricingTable(body []byte, heading string) map[string][]string {
-	rows := make(map[string][]string)
+// officialPricingTable 是官方价格页的一张 markdown 表。OpenAI 会调整列顺序
+// （2026-11 起 output 挪到 cached input 前，并新增 30m/12h 缓存写入列），
+// 所以按表头名字取列，不能写死列号。
+type officialPricingTable struct {
+	columns map[string]int
+	rows    map[string][]string
+}
+
+// price 按表头名字（不区分大小写）取价格；没有该列或该行缺列时返回 0。
+func (t officialPricingTable) price(cells []string, column string) float64 {
+	index, ok := t.columns[column]
+	if !ok || index >= len(cells) {
+		return 0
+	}
+	return parseOfficialPrice(cells[index])
+}
+
+func parseOfficialPricingTable(body []byte, heading string) officialPricingTable {
+	table := officialPricingTable{columns: make(map[string]int), rows: make(map[string][]string)}
 	scanner := bufio.NewScanner(strings.NewReader(string(body)))
 	inSection := false
 	seenHeader := false
@@ -282,6 +293,9 @@ func parseOfficialPricingTable(body []byte, heading string) map[string][]string 
 		}
 		if !seenHeader {
 			seenHeader = true
+			for index, name := range cells {
+				table.columns[strings.ToLower(strings.TrimSpace(name))] = index
+			}
 			continue
 		}
 		if isMarkdownSeparatorRow(cells) {
@@ -289,10 +303,10 @@ func parseOfficialPricingTable(body []byte, heading string) map[string][]string 
 		}
 		model := normalizeOfficialPricingModel(cells[0])
 		if model != "" {
-			rows[model] = cells
+			table.rows[model] = cells
 		}
 	}
-	return rows
+	return table
 }
 
 // ParseXAIOfficialPricingMarkdown reads xAI's stable central pricing table. It
