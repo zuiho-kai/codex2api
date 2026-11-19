@@ -115,6 +115,12 @@ func openAIIslandRow(value any) (officialPricingRow, error) {
 		return nil, fmt.Errorf("OpenAI 文本价格数据列数不符")
 	}
 	model, ok := cells[0].(string)
+	if labeled, isMap := cells[0].(map[string]any); isMap {
+		// 已弃用的型号以 {label, deprecated} 对象给出，取 label 里的型号名。
+		if pair, isPair := labeled["label"].([]any); isPair && len(pair) == 2 {
+			model, ok = pair[1].(string)
+		}
+	}
 	if !ok || !strings.HasPrefix(model, "gpt-") && !strings.HasPrefix(model, "o") {
 		return nil, fmt.Errorf("OpenAI 模型列格式不符")
 	}
